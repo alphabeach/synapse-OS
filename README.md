@@ -1,4 +1,4 @@
-# Exin Lab Ops
+# Synapse OS
 
 Procurement, customs clearance, and inventory for a research lab.
 FastAPI + SQLite + a buildless vanilla ES-module SPA. No npm, no bundler,
