@@ -1,0 +1,6 @@
+bgc_lab.db
+bgc_lab.db-wal
+bgc_lab.db-shm
+__pycache__/
+.pytest_cache/
+.venv/
