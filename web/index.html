@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exin Lab Ops</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230f766e'/><text x='16' y='22' font-size='16' font-family='sans-serif' fill='white' text-anchor='middle'>E</text></svg>">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip" href="#view-root">Skip to content</a>
+
+  <div id="app" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">EL</span>
+        <span><strong>Exin Lab Ops</strong><small>BGC &middot; Manila</small></span>
+      </div>
+      <nav id="nav" aria-label="Main navigation"></nav>
+      <div class="sidebar-foot">
+        <span id="who" class="who"></span>
+        <button id="logout" class="btn ghost sm" type="button">Sign out</button>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <h1 id="page-title">Command</h1>
+        <span id="role-chip" class="chip"></span>
+      </header>
+      <section id="view-root" class="view" tabindex="-1"></section>
+    </main>
+  </div>
+
+  <div id="login" class="login-wrap">
+    <form id="login-form" class="login-card" autocomplete="on">
+      <h1>Exin Lab Ops</h1>
+      <p class="muted">Wet-lab procurement and inventory &mdash; BGC, Manila</p>
+      <label class="field"><span>Username</span>
+        <input id="username" name="username" autocomplete="username" required>
+      </label>
+      <label class="field"><span>Password</span>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button class="btn primary" type="submit">Sign in</button>
+      <button class="btn" type="button" id="demo">1-click demo login</button>
+      <p id="login-error" class="error" role="alert"></p>
+      <p class="muted sm">Demo accounts: admin / member / viewer, passwords
+        <code>exin-*-2026</code></p>
+    </form>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
