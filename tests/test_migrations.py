@@ -72,6 +72,45 @@ def test_successful_step_applies_and_stamps(fresh, monkeypatch):
     assert "extra" in tables
 
 
+def test_v1_database_upgrades_to_partial_unique_po_index(tmp_path, monkeypatch):
+    path = tmp_path / "v1.db"
+    monkeypatch.setattr(appdb, "DB_PATH", str(path))
+    monkeypatch.setattr(appdb, "SCHEMA_VERSION", 1)
+    monkeypatch.setattr(appdb, "_MIGRATIONS", [])
+    appdb.init_db(seed_demo=False)
+
+    monkeypatch.undo()
+    monkeypatch.setattr(appdb, "DB_PATH", str(path))
+    appdb.init_db()
+
+    assert _user_version(str(path)) == appdb.SCHEMA_VERSION
+    indexes = {
+        r[0] for r in _meta(
+            str(path), "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
+    }
+    assert "idx_po_one_per_quote" in indexes
+
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("INSERT INTO item (name) VALUES ('x')")
+        conn.execute(
+            """INSERT INTO quote (item_id, supplier_name, supplier_type, unit_price)
+               VALUES (1, 's', 'local_ph', 1)"""
+        )
+        insert = """INSERT INTO purchase_order
+                        (quote_id, item_id, supplier_name, quantity,
+                         landed_cost_php, status)
+                    VALUES (1, 1, 's', 1, 1, ?)"""
+        conn.execute(insert, ("cancelled",))
+        conn.execute(insert, ("cancelled",))  # cancelled POs may share a quote
+        conn.execute(insert, ("po_placed",))
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(insert, ("po_placed",))  # live POs may not
+    finally:
+        conn.close()
+
+
 def test_migration_is_idempotent(fresh, monkeypatch):
     monkeypatch.setattr(appdb, "_MIGRATIONS", [
         (appdb.SCHEMA_VERSION + 1, "CREATE TABLE extra (id INTEGER PRIMARY KEY);"),

@@ -67,6 +67,55 @@ def test_demo_login_goes_through_real_auth(client):
     assert client.cookies["exin_session"]
 
 
+def test_login_throttling_returns_429(client):
+    from app.auth import USER_FAIL_LIMIT
+
+    payload = {"username": "admin", "password": "wrong"}
+    for _ in range(USER_FAIL_LIMIT):
+        assert client.post("/api/login", json=payload).status_code == 401
+    assert client.post("/api/login", json=payload).status_code == 429
+
+
+def test_demo_login_is_disabled_without_the_flag(client, monkeypatch):
+    monkeypatch.setenv("DEMO_LOGIN", "0")
+    assert client.post("/api/demo-login").status_code == 404
+
+
+def test_seed_with_demo_login_off_uses_admin_password(tmp_path, monkeypatch):
+    import app.db as appdb
+    from app import auth as appauth
+
+    monkeypatch.setenv("DEMO_LOGIN", "0")
+    monkeypatch.setenv("ADMIN_PASSWORD", "a-real-admin-password")
+    monkeypatch.setattr(appdb, "DB_PATH", str(tmp_path / "prod.db"))
+    appdb.init_db(seed_demo=True)
+
+    conn = appdb.get_conn()
+    try:
+        users = conn.execute(
+            "SELECT username, password_hash, password_salt, iterations FROM app_user"
+        ).fetchall()
+    finally:
+        conn.close()
+    assert [u["username"] for u in users] == ["admin"]
+    assert appauth.verify_password(
+        "a-real-admin-password",
+        users[0]["password_salt"], users[0]["password_hash"], users[0]["iterations"],
+    )
+
+
+def test_db_path_honours_env(tmp_path, monkeypatch):
+    import importlib
+
+    import app.db as appdb
+
+    target = str(tmp_path / "env.db")
+    with monkeypatch.context() as m:
+        m.setenv("DB_PATH", target)
+        assert importlib.reload(appdb).DB_PATH == target
+    importlib.reload(appdb)  # restore the default for later tests
+
+
 def test_logout_ends_the_session(admin):
     admin.headers["X-CSRF-Token"] = admin.cookies["exin_csrf"]
     assert admin.post("/api/logout").status_code == 200

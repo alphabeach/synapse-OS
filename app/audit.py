@@ -19,7 +19,7 @@ def record(conn, user, action, entity_type=None, entity_id=None, detail=None):
         conn.execute(
             """INSERT INTO audit_log
                    (occurred_at, user_id, username, action, entity_type, entity_id, detail)
-               VALUES (datetime('now'), ?, ?, ?, ?, ?, ?)""",
+               VALUES (datetime('now', '+8 hours'), ?, ?, ?, ?, ?, ?)""",
             (user_id, username, action, entity_type, entity_id, detail),
         )
     except Exception:

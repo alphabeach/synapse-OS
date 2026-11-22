@@ -54,6 +54,70 @@ def test_award_is_blocked_by_an_open_po(member):
     assert "open PO" in response.json()["detail"]
 
 
+def test_cancelling_a_po_demotes_its_quote_and_allows_re_award(member, db):
+    item = item_named(member, "DMEM/F12 Medium (500 mL)")
+    target = next(q for q in _quotes(member, item) if q["supplier_type"] == "alibaba")
+    first = member.post(f"/api/quotes/{target['id']}/award", json={})
+    assert first.status_code == 200, first.text
+
+    cancelled = member.patch(
+        f"/api/purchase-orders/{first.json()['po_id']}", json={"status": "cancelled"}
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert db.execute(
+        "SELECT status FROM quote WHERE id = ?", (target["id"],)
+    ).fetchone()[0] == "draft"
+
+    again = member.post(f"/api/quotes/{target['id']}/award", json={})
+    assert again.status_code == 200, again.text
+    assert again.json()["po_id"] != first.json()["po_id"]
+
+
+def test_award_demotes_stale_backup_quotes(member, db):
+    item = item_named(member, "Phospho-Tau (pS396) Antibody")
+    seeded = next(
+        p for p in member.get("/api/purchase-orders").json() if p["item_id"] == item["id"]
+    )
+    assert member.patch(
+        f"/api/purchase-orders/{seeded['id']}", json={"status": "cancelled"}
+    ).status_code == 200
+
+    target = next(q for q in _quotes(member, item) if q["supplier_type"] == "local_ph")
+    assert member.post(f"/api/quotes/{target['id']}/award", json={}).status_code == 200
+
+    statuses = [
+        r["status"] for r in db.execute(
+            "SELECT status FROM quote WHERE item_id = ?", (item["id"],)
+        )
+    ]
+    assert statuses.count("primary") == 1
+    assert statuses.count("backup") == 1
+
+
+def test_award_rejects_zero_quantity_instead_of_falling_back_to_moq(member):
+    item = item_named(member, "DMEM/F12 Medium (500 mL)")
+    target = next(q for q in _quotes(member, item) if q["supplier_type"] == "alibaba")
+    response = member.post(
+        f"/api/quotes/{target['id']}/award", json={"quantity": 0}
+    )
+    assert response.status_code == 400
+
+
+def test_out_of_range_quote_numbers_are_400(member):
+    item = item_named(member, "Ethanol 70%")
+    base = {
+        "item_id": item["id"], "supplier_name": "Bad Input",
+        "supplier_type": "local_ph", "unit_price": 10,
+    }
+    for bad in (
+        {"fx_rate": -1}, {"shipping_php": -1}, {"cold_chain_php": -1},
+        {"duty_rate": 1.5}, {"lead_time_days": -1}, {"boc_buffer_days": -1},
+        {"fx_rate": 0},  # passes the model bound, must not 500 on the DB CHECK
+    ):
+        response = member.post("/api/quotes", json={**base, **bad})
+        assert response.status_code == 400, (bad, response.text)
+
+
 def test_landed_cost_ignores_client_supplied_totals(member):
     """The server computes landed cost; nothing in the request can set it."""
     item = item_named(member, "Ethanol 70%")

@@ -10,12 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from app import audit, auth, db
+from app.seed import DEMO_ACCOUNT, demo_login_enabled
 
 router = APIRouter()
-
-# Seeded demo account. The button posts these through the normal login handler;
-# nothing bypasses authentication.
-DEMO_LOGIN = {"username": "admin", "password": "exin-demo-2026"}
 
 
 class LoginBody(BaseModel):
@@ -90,7 +87,10 @@ def login(body: LoginBody, request: Request, response: Response):
 
 @router.post("/demo-login")
 def demo_login(request: Request, response: Response):
-    return _do_login(LoginBody(**DEMO_LOGIN), request, response)
+    # Same normal login handler as the button: nothing bypasses authentication.
+    if not demo_login_enabled():
+        raise HTTPException(status_code=404, detail="demo login is disabled")
+    return _do_login(LoginBody(**DEMO_ACCOUNT), request, response)
 
 
 @router.post("/logout")

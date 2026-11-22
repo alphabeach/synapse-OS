@@ -125,6 +125,46 @@ def test_stage_moves_forward_and_docs_are_tracked(member):
     assert backwards.status_code == 400
 
 
+def test_stage_advance_must_be_one_step(member):
+    po = _seeded_po(member)  # at_boc_filing
+    skipped = member.patch(
+        f"/api/purchase-orders/{po['id']}", json={"status": "duties_assessed"}
+    )
+    assert skipped.status_code == 400
+    assert member.patch(
+        f"/api/purchase-orders/{po['id']}", json={"status": "permit_clearance"}
+    ).status_code == 200
+
+
+def test_released_in_transit_requires_all_docs_and_permit(member):
+    po = _seeded_po(member)
+    url = f"/api/purchase-orders/{po['id']}"
+    assert member.patch(url, json={"status": "permit_clearance"}).status_code == 200
+    assert member.patch(url, json={"status": "duties_assessed"}).status_code == 200
+
+    blocked = member.patch(url, json={"status": "released_in_transit"})
+    assert blocked.status_code == 400
+    assert "doc_coa_msds" in blocked.json()["detail"]
+    assert "permit_ok" in blocked.json()["detail"]
+
+    permit_only = member.patch(
+        url, json={"status": "released_in_transit", "permit_ok": True}
+    )
+    assert permit_only.status_code == 400
+    assert "doc_coa_msds" in permit_only.json()["detail"]
+
+    docs_only = member.patch(
+        url, json={"status": "released_in_transit", "doc_coa_msds": True}
+    )
+    assert docs_only.status_code == 400
+    assert "permit_ok" in docs_only.json()["detail"]
+
+    released = member.patch(url, json={
+        "status": "released_in_transit", "doc_coa_msds": True, "permit_ok": True,
+    })
+    assert released.status_code == 200, released.text
+
+
 def test_viewer_sees_orders_but_cannot_change_them(viewer):
     po = _seeded_po(viewer)
     assert viewer.post(f"/api/purchase-orders/{po['id']}/followup").status_code == 403

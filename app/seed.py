@@ -4,13 +4,23 @@ Dates are relative (date('now', ...)) so the demo never looks stale: one lot is
 always 18 days from expiry and one BOC shipment is always 3 days past its
 follow-up, which makes every alert visible on first boot.
 """
+import os
+
 from app import audit, auth, db, landed
 
+# The one place the demo credentials live: seeding and POST /api/demo-login both
+# read these, so they cannot drift apart.
+DEMO_ACCOUNT = {"username": "admin", "password": "exin-demo-2026"}
 DEMO_PASSWORDS = {
-    "admin": "exin-demo-2026",
+    "admin": DEMO_ACCOUNT["password"],
     "member": "exin-member-2026",
     "viewer": "exin-viewer-2026",
 }
+
+
+def demo_login_enabled() -> bool:
+    """Demo accounts are on by default locally; DEMO_LOGIN=0 turns them off."""
+    return os.environ.get("DEMO_LOGIN", "1") == "1"
 
 _USERS = [
     ("admin", "Exin Admin", "admin"),
@@ -49,8 +59,8 @@ _LOTS = [
 ]
 
 
-def _add_user(conn, username, full_name, role):
-    salt, digest, iterations = auth.hash_password(DEMO_PASSWORDS[username])
+def _add_user(conn, username, full_name, role, password):
+    salt, digest, iterations = auth.hash_password(password)
     cur = conn.execute(
         """INSERT INTO app_user
                (username, full_name, role, password_hash, password_salt, iterations)
@@ -65,9 +75,15 @@ def seed():
     try:
         if conn.execute("SELECT COUNT(*) FROM item").fetchone()[0]:
             return
-        admin_id = _add_user(conn, *_USERS[0])
-        for row in _USERS[1:]:
-            _add_user(conn, *row)
+        if demo_login_enabled():
+            admin_id = _add_user(conn, *_USERS[0], DEMO_PASSWORDS["admin"])
+            for row in _USERS[1:]:
+                _add_user(conn, *row, DEMO_PASSWORDS[row[0]])
+        else:
+            password = os.environ.get("ADMIN_PASSWORD")
+            if not password:
+                raise RuntimeError("ADMIN_PASSWORD must be set when DEMO_LOGIN=0")
+            admin_id = _add_user(conn, "admin", "Administrator", "admin", password)
 
         conn.executemany(
             "INSERT INTO app_setting (key, value) VALUES (?, ?)",
@@ -101,7 +117,7 @@ def seed():
             conn.execute(
                 """INSERT INTO lot (item_id, lot_number, expiry_date, quantity,
                                     location, cold_chain_ok)
-                   VALUES (?, ?, date('now', ?), ?, ?, ?)""",
+                   VALUES (?, ?, date('now', '+8 hours', ?), ?, ?, ?)""",
                 (item_ids[idx], lot_number, offset, qty, location, cold),
             )
 

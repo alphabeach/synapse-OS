@@ -6,10 +6,6 @@ Everything here is read-only: a GET never takes a write lock or reconciles state
 """
 import math
 
-LOW = "low_stock"
-EXPIRING = "expiring"
-CHASE = "chase"
-
 
 def int_setting(conn, key, default):
     row = conn.execute("SELECT value FROM app_setting WHERE key = ?", (key,)).fetchone()
@@ -55,7 +51,7 @@ def expiring(conn):
                   i.id AS item_id, i.name AS item
              FROM lot l JOIN item i ON i.id = l.item_id
             WHERE l.quantity > 0 AND i.status = 'active'
-              AND l.expiry_date <= date('now', '+30 day')
+              AND l.expiry_date <= date('now', '+8 hours', '+30 day')
             ORDER BY l.expiry_date, l.id"""
     ).fetchall()
     return [dict(r) for r in rows]

@@ -1,9 +1,11 @@
 """FastAPI app wiring: routers, hardening middleware, static SPA."""
 import hmac
-import os
 import pathlib
+import sqlite3
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -61,6 +63,22 @@ async def harden(request: Request, call_next):
     else:
         response.headers.setdefault("Cache-Control", "no-cache")
     return response
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_handler(request: Request, exc: RequestValidationError):
+    # Bad input is a 400 here, not FastAPI's default 422: one convention for
+    # the SPA and the API.
+    return JSONResponse(
+        {"detail": "invalid request", "errors": jsonable_encoder(exc.errors())},
+        status_code=400,
+    )
+
+
+@app.exception_handler(sqlite3.IntegrityError)
+async def integrity_handler(request: Request, exc: sqlite3.IntegrityError):
+    # A CHECK/UNIQUE the model did not catch is still bad input, never a 500.
+    return JSONResponse({"detail": "invalid input"}, status_code=400)
 
 
 @app.exception_handler(OverflowError)

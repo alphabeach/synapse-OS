@@ -7,12 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.db as appdb
-
-PASSWORDS = {
-    "admin": "exin-demo-2026",
-    "member": "exin-member-2026",
-    "viewer": "exin-viewer-2026",
-}
+from app.seed import DEMO_PASSWORDS as PASSWORDS
 
 
 @pytest.fixture

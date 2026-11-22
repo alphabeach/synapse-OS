@@ -78,7 +78,7 @@ CREATE INDEX idx_quote_item ON quote(item_id);
 -- One awarded quote = one PO for one item (po_line is the upgrade path).
 CREATE TABLE purchase_order (
     id              INTEGER PRIMARY KEY,
-    quote_id        INTEGER NOT NULL UNIQUE REFERENCES quote(id),
+    quote_id        INTEGER NOT NULL REFERENCES quote(id),
     item_id         INTEGER NOT NULL REFERENCES item(id),
     supplier_name   TEXT    NOT NULL,
     is_import       INTEGER NOT NULL DEFAULT 1 CHECK (is_import IN (0, 1)),
@@ -104,6 +104,9 @@ CREATE TABLE purchase_order (
 );
 CREATE INDEX idx_po_status ON purchase_order(status, last_followup_at);
 CREATE INDEX idx_po_item ON purchase_order(item_id);
+-- One live PO per quote; a cancelled PO frees its quote for a re-award.
+CREATE UNIQUE INDEX idx_po_one_per_quote
+    ON purchase_order(quote_id) WHERE status != 'cancelled';
 
 -- Lots are minted only on receipt; expiry is mandatory, so expiring stock is
 -- always visible rather than silently missing an expiry date.
@@ -116,14 +119,14 @@ CREATE TABLE lot (
     quantity       INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
     location       TEXT    NOT NULL,
     cold_chain_ok  INTEGER NOT NULL DEFAULT 1 CHECK (cold_chain_ok IN (0, 1)),
-    received_date  DATE    NOT NULL DEFAULT (date('now')),
+    received_date  DATE    NOT NULL DEFAULT (date('now', '+8 hours')),
     created_at     TIMESTAMP NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_lot_item_expiry ON lot(item_id, expiry_date);
 
 CREATE TABLE audit_log (
     id          INTEGER PRIMARY KEY,
-    occurred_at TIMESTAMP NOT NULL DEFAULT (datetime('now')),
+    occurred_at TIMESTAMP NOT NULL DEFAULT (datetime('now', '+8 hours')),
     user_id     INTEGER,
     username    TEXT,
     action      TEXT    NOT NULL,

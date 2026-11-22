@@ -1,6 +1,6 @@
 """Multi-supplier quote matrix (PHP landed cost) and atomic award -> PO."""
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import audit, auth, db, landed
 
@@ -9,6 +9,9 @@ router = APIRouter()
 SUPPLIER_TYPES = {"local_ph", "alibaba", "wechat", "us_eu"}
 CURRENCIES = {"PHP", "USD"}
 MAX_QTY = 1_000_000
+MAX_DAYS = 3_650
+MAX_MONEY = 10_000_000
+MAX_FX = 1_000
 
 
 class QuoteBody(BaseModel):
@@ -17,13 +20,13 @@ class QuoteBody(BaseModel):
     supplier_type: str
     unit_price: float
     currency: str = "PHP"
-    fx_rate: float = 1
+    fx_rate: float = Field(1, ge=0, le=MAX_FX)
     moq: int = 1
-    shipping_php: float = 0
-    cold_chain_php: float = 0
-    duty_rate: float = 0
-    lead_time_days: int = 0
-    boc_buffer_days: int = 0
+    shipping_php: float = Field(0, ge=0, le=MAX_MONEY)
+    cold_chain_php: float = Field(0, ge=0, le=MAX_MONEY)
+    duty_rate: float = Field(0, ge=0, le=1.0)
+    lead_time_days: int = Field(0, ge=0, le=MAX_DAYS)
+    boc_buffer_days: int = Field(0, ge=0, le=MAX_DAYS)
     note: str | None = None
 
 
@@ -132,7 +135,7 @@ def award_quote(quote_id: int, body: AwardBody,
             conn.rollback()
             raise HTTPException(status_code=400, detail="quote is already awarded")
 
-        quantity = body.quantity or quote["moq"]
+        quantity = body.quantity if body.quantity is not None else quote["moq"]
         if not 0 < quantity <= MAX_QTY:
             conn.rollback()
             raise HTTPException(status_code=400, detail="quantity out of range")
@@ -162,8 +165,10 @@ def award_quote(quote_id: int, body: AwardBody,
             r["shipping_php"], r["cold_chain_php"], r["duty_rate"],
         ))
 
+        # A new award replaces the whole bench, so no stale backup survives it.
         conn.execute(
-            "UPDATE quote SET status = 'backup' WHERE item_id = ? AND status = 'primary'",
+            """UPDATE quote SET status = 'draft'
+                WHERE item_id = ? AND status IN ('primary', 'backup')""",
             (quote["item_id"],),
         )
         conn.execute("UPDATE quote SET status = 'primary' WHERE id = ?", (quote_id,))

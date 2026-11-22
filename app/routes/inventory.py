@@ -2,13 +2,16 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import alerts, audit, auth, db
 
 router = APIRouter()
 
 MAX_QTY = 1_000_000
+MAX_DAYS = 3_650
+MAX_RATE = 1_000_000
+MAX_COST = 100_000_000
 CATEGORIES = {"antibody", "reagent", "media", "chemical", "consumable", "other"}
 STATUSES = {"active", "deprecated"}
 
@@ -17,21 +20,21 @@ class ItemBody(BaseModel):
     name: str
     category: str = "other"
     unit: str = "vial"
-    quantity_on_hand: int = 0
-    daily_burn_rate: float = 0
-    safety_stock: int = 0
-    lead_time_days: int = 0
-    unit_cost_php: float = 0
+    quantity_on_hand: int = Field(0, ge=0, le=MAX_QTY)
+    daily_burn_rate: float = Field(0, ge=0, le=MAX_RATE)
+    safety_stock: int = Field(0, ge=0, le=MAX_QTY)
+    lead_time_days: int = Field(0, ge=0, le=MAX_DAYS)
+    unit_cost_php: float = Field(0, ge=0, le=MAX_COST)
 
 
 class ItemPatch(BaseModel):
     name: str | None = None
     category: str | None = None
     unit: str | None = None
-    daily_burn_rate: float | None = None
-    safety_stock: int | None = None
-    lead_time_days: int | None = None
-    unit_cost_php: float | None = None
+    daily_burn_rate: float | None = Field(None, ge=0, le=MAX_RATE)
+    safety_stock: int | None = Field(None, ge=0, le=MAX_QTY)
+    lead_time_days: int | None = Field(None, ge=0, le=MAX_DAYS)
+    unit_cost_php: float | None = Field(None, ge=0, le=MAX_COST)
     status: str | None = None
 
 
@@ -74,6 +77,13 @@ def _item_json(conn, item_id):
         raise HTTPException(status_code=404, detail="item not found")
     buffer_days = alerts.int_setting(conn, "boc_buffer_days", 7)
     item = dict(row)
+    location = conn.execute(
+        """SELECT location FROM lot
+            WHERE item_id = ? AND quantity > 0
+            ORDER BY expiry_date, id LIMIT 1""",
+        (item_id,),
+    ).fetchone()
+    item["storage_location"] = location["location"] if location else None
     item["reorder_level"] = alerts.reorder_level(
         item["daily_burn_rate"], item["lead_time_days"],
         item["safety_stock"], buffer_days,
@@ -106,17 +116,45 @@ def _draw_down_fefo(conn, item_id, quantity):
             return
 
 
+def _sync_lots(conn, item_id, new_quantity):
+    """Make SUM(lot.quantity) equal the recounted item total.
+
+    A decrease drains real lots FEFO. An increase is stock nobody labelled, so
+    it becomes one adjustment lot with a far expiry: no real batch is invented
+    and the count never shows as expiring.
+    """
+    lot_total = conn.execute(
+        "SELECT COALESCE(SUM(quantity), 0) FROM lot WHERE item_id = ?", (item_id,)
+    ).fetchone()[0]
+    if new_quantity < lot_total:
+        _draw_down_fefo(conn, item_id, lot_total - new_quantity)
+    elif new_quantity > lot_total:
+        conn.execute(
+            """INSERT INTO lot (item_id, lot_number, expiry_date, quantity,
+                                location, cold_chain_ok, received_date)
+               VALUES (?, 'ADJ-' || date('now', '+8 hours'),
+                       date('now', '+8 hours', '+10 years'), ?,
+                       'Recount adjustment', 1, date('now', '+8 hours'))""",
+            (item_id, new_quantity - lot_total),
+        )
+
+
 @router.get("/items")
 def list_items(q: str | None = None, user: dict = Depends(auth.require_role("viewer"))):
     conn = db.get_conn()
     try:
         buffer_days = alerts.int_setting(conn, "boc_buffer_days", 7)
-        sql = "SELECT * FROM item"
+        sql = """SELECT i.*, (
+                     SELECT l.location FROM lot l
+                      WHERE l.item_id = i.id AND l.quantity > 0
+                      ORDER BY l.expiry_date, l.id LIMIT 1
+                 ) AS storage_location
+                   FROM item i"""
         params = []
         if q:
-            sql += " WHERE name LIKE ? ESCAPE '\\'"
+            sql += " WHERE i.name LIKE ? ESCAPE '\\'"
             params.append(like_term(q))
-        sql += " ORDER BY status = 'deprecated', name"
+        sql += " ORDER BY i.status = 'deprecated', i.name"
         out = []
         for row in conn.execute(sql, params):
             item = dict(row)
@@ -153,7 +191,7 @@ def item_detail(item_id: int, user: dict = Depends(auth.require_role("viewer")))
         conn.close()
 
 
-@router.post("/items", dependencies=[Depends(auth.require_role("admin"))])
+@router.post("/items")
 def create_item(body: ItemBody, user: dict = Depends(auth.require_role("admin"))):
     if not body.name.strip():
         raise HTTPException(status_code=400, detail="name is required")
@@ -179,7 +217,7 @@ def create_item(body: ItemBody, user: dict = Depends(auth.require_role("admin"))
         conn.close()
 
 
-@router.patch("/items/{item_id}", dependencies=[Depends(auth.require_role("admin"))])
+@router.patch("/items/{item_id}")
 def patch_item(item_id: int, body: ItemPatch,
                user: dict = Depends(auth.require_role("admin"))):
     fields = body.model_dump(exclude_none=True)
@@ -208,7 +246,7 @@ def patch_item(item_id: int, body: ItemPatch,
 @router.post("/items/{item_id}/consume")
 def consume(item_id: int, body: ConsumeBody,
             user: dict = Depends(auth.require_role("member"))):
-    if body.quantity is None or not 0 < body.quantity <= MAX_QTY:
+    if not 0 < body.quantity <= MAX_QTY:
         raise HTTPException(status_code=400, detail="quantity must be positive")
     conn = db.get_conn()
     try:
@@ -258,8 +296,8 @@ def restock(item_id: int, body: RestockBody,
             raise HTTPException(status_code=404, detail="item not found")
         lot_id = conn.execute(
             """INSERT INTO lot (item_id, lot_number, expiry_date, quantity,
-                                location, cold_chain_ok)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+                                location, cold_chain_ok, received_date)
+               VALUES (?, ?, ?, ?, ?, ?, date('now', '+8 hours'))""",
             (item_id, body.lot_number.strip(), expiry, body.quantity,
              body.location.strip(), int(body.cold_chain_ok)),
         ).lastrowid
@@ -304,6 +342,7 @@ def recount(item_id: int, body: RecountBody,
                     f"you expected {body.expected_quantity}. Refresh and retry."
                 ),
             )
+        _sync_lots(conn, item_id, body.quantity)
         audit.record(
             conn, user, "stock.recount", "item", item_id,
             f"{body.expected_quantity} -> {body.quantity}"

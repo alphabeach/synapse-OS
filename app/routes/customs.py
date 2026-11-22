@@ -43,8 +43,9 @@ def _transition_ok(current, new):
     if current in ("received", "cancelled"):
         return False
     if current == "discrepancy_hold":
-        return True  # a hold can be cleared back into the flow
-    return STAGES.index(new) > STAGES.index(current)
+        return new in STAGES  # a hold can be cleared back into the flow
+    # Normal progress is one stage at a time: no jumping the BOC queue.
+    return STAGES.index(new) == STAGES.index(current) + 1
 
 
 def _po_detail(conn, po_id):
@@ -122,7 +123,7 @@ def update_purchase_order(po_id: int, body: PurchaseOrderPatch,
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT status FROM purchase_order WHERE id = ?", (po_id,)
+            "SELECT * FROM purchase_order WHERE id = ?", (po_id,)
         ).fetchone()
         if row is None:
             conn.rollback()
@@ -144,6 +145,26 @@ def update_purchase_order(po_id: int, body: PurchaseOrderPatch,
                 raise HTTPException(
                     status_code=400,
                     detail=f"cannot move a {current} order to {new}",
+                )
+            if new == "released_in_transit":
+                # The release gate: every document plus the permit when the
+                # item needs one. Docs patched in this same request count.
+                state = dict(row)
+                state.update(fields)
+                missing = [f for f in DOC_FIELDS if not state[f]]
+                if state["permit_type"] != "NONE" and not state["permit_ok"]:
+                    missing.append("permit_ok")
+                if missing:
+                    conn.rollback()
+                    raise HTTPException(
+                        status_code=400,
+                        detail="released_in_transit requires " + ", ".join(missing),
+                    )
+            if new == "cancelled":
+                # Put the quote back on the bench so the item can be re-awarded.
+                conn.execute(
+                    "UPDATE quote SET status = 'draft' WHERE id = ? AND status = 'primary'",
+                    (row["quote_id"],),
                 )
         sets = ", ".join(f"{k} = ?" for k in fields)
         conn.execute(f"UPDATE purchase_order SET {sets} WHERE id = ?",
@@ -236,8 +257,8 @@ def receive_purchase_order(po_id: int, body: ReceiveBody,
 
         lot_id = conn.execute(
             """INSERT INTO lot (item_id, po_id, lot_number, expiry_date, quantity,
-                                location, cold_chain_ok)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                location, cold_chain_ok, received_date)
+               VALUES (?, ?, ?, ?, ?, ?, ?, date('now', '+8 hours'))""",
             (po["item_id"], po_id, body.lot_number.strip(), expiry, po["quantity"],
              body.location.strip(), int(bool(body.cold_chain_ok))),
         ).lastrowid
@@ -247,7 +268,8 @@ def receive_purchase_order(po_id: int, body: ReceiveBody,
         )
         conn.execute(
             """UPDATE purchase_order
-                  SET status = 'received', received_at = datetime('now'),
+                  SET status = 'received',
+                      received_at = datetime('now', '+8 hours'),
                       cold_chain_ok = ?
                 WHERE id = ?""",
             (int(bool(body.cold_chain_ok)), po_id),
