@@ -5,10 +5,13 @@ import * as inventory from "./inventory.js";
 import * as quotes from "./quotes.js";
 import * as customs from "./customs.js";
 
-import { el, rank } from "./ui.js";
+import { el, icon, rank } from "./ui.js";
 
 const VIEWS = [dashboard, inventory, quotes, customs];
 const BY_ID = new Map(VIEWS.map((m) => [m.view.id, m]));
+const NAV_ICON = {
+  dashboard: "dashboard", inventory: "package", quotes: "scale", customs: "ship",
+};
 
 const state = { me: null, current: null };
 const $ = (sel) => document.querySelector(sel);
@@ -66,7 +69,7 @@ const ctx = {
   get me() { return state.me; },
   api,
   toast,
-  navigate: (id) => navigate(id),
+  navigate: (id, params) => navigate(id, params),
   can: (minimum) => rank(state.me && state.me.role) >= rank(minimum),
 };
 
@@ -105,7 +108,7 @@ function paintNav() {
       type: "button",
       class: "nav-btn" + (mod.view.id === state.current ? " active" : ""),
       onclick: () => navigate(mod.view.id),
-    }, mod.view.label));
+    }, icon(NAV_ICON[mod.view.id] || "dashboard"), el("span", {}, mod.view.label)));
   }
 }
 
@@ -114,7 +117,7 @@ function paintNav() {
 // --------------------------------------------------------------------------- //
 let suppressHash = false;
 
-function navigate(id) {
+function navigate(id, params = null) {
   if (!state.me) return;
   const allowed = allowedViews();
   let mod = BY_ID.get(id);
@@ -131,7 +134,7 @@ function navigate(id) {
 
   const root = $("#view-root");
   root.replaceChildren(el("p", { class: "muted" }, "Loading…"));
-  Promise.resolve(mod.render(root, ctx)).catch((err) => {
+  Promise.resolve(mod.render(root, ctx, params || {})).catch((err) => {
     root.replaceChildren(el("p", { class: "error" }, err.message));
   });
 }
