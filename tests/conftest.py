@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.db as appdb
-from app.seed import DEMO_PASSWORDS as PASSWORDS
+from app.seed import DEMO_PASSWORDS as PASSWORDS, DEMO_USERNAMES as USERNAMES
 
 
 @pytest.fixture
@@ -28,11 +28,11 @@ def client(db_path):
 
 def login(client, role="admin"):
     response = client.post(
-        "/api/login", json={"username": role, "password": PASSWORDS[role]}
+        "/api/login", json={"username": USERNAMES[role], "password": PASSWORDS[role]}
     )
     assert response.status_code == 200, response.text
     # Double-submit CSRF: the header must mirror the readable cookie.
-    client.headers["X-CSRF-Token"] = client.cookies["exin_csrf"]
+    client.headers["X-CSRF-Token"] = client.cookies["synapse_csrf"]
     return response.json()
 
 

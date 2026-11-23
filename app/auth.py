@@ -13,8 +13,8 @@ from fastapi import HTTPException, Request
 from app import db
 
 ITERATIONS = 210_000
-SESSION_COOKIE = "exin_session"
-CSRF_COOKIE = "exin_csrf"
+SESSION_COOKIE = "synapse_session"
+CSRF_COOKIE = "synapse_csrf"
 SESSION_DAYS = 1
 
 ROLE_RANK = {"viewer": 0, "member": 1, "admin": 2}

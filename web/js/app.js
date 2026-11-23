@@ -20,7 +20,7 @@ const $ = (sel) => document.querySelector(sel);
 // API: cookie session + double-submit CSRF header on every mutation.
 // --------------------------------------------------------------------------- //
 function csrf() {
-  const match = document.cookie.match(/(?:^|;\s*)exin_csrf=([^;]+)/);
+  const match = document.cookie.match(/(?:^|;\s*)synapse_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : "";
 }
 
@@ -133,7 +133,7 @@ function navigate(id, params = null) {
   $("#page-title").textContent = mod.view.label;
 
   const root = $("#view-root");
-  root.replaceChildren(el("p", { class: "muted" }, "Loading…"));
+  root.replaceChildren();
   Promise.resolve(mod.render(root, ctx, params || {})).catch((err) => {
     root.replaceChildren(el("p", { class: "error" }, err.message));
   });

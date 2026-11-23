@@ -106,8 +106,8 @@ export function tempTag(location) {
   if (/-80/i.test(text)) tag = badge("-80°C", "stage");
   else if (/-20/i.test(text)) tag = badge("-20°C", "stage");
   else if (/\b4\s*C|fridge/i.test(text)) tag = badge("4°C", "ok");
-  else if (/RT|bench|cabinet|shelf/i.test(text)) tag = badge("RT", "muted");
-  else tag = badge("—", "muted");
+  else if (/RT|bench|cabinet|shelf|flammable/i.test(text)) tag = badge("RT", "muted");
+  else tag = el("span", { class: "muted" }, "—");
   tag.classList.add("mono");
   return tag;
 }

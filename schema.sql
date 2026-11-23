@@ -1,4 +1,4 @@
--- Exin Lab Ops -- fresh database schema.
+-- Synapse Lab Ops -- fresh database schema.
 -- Every closed status/role set is CHECKed here. Operational records are never
 -- hard-deleted (items and quotes carry status flags instead).
 PRAGMA foreign_keys = ON;

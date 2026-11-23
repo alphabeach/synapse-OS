@@ -45,13 +45,7 @@ const DISCREPANCIES = [
 
 export async function render(root, ctx, params = {}) {
   const host = el("div");
-  root.append(
-    el("p", { class: "muted sm" },
-      "A red >48h CHASE flag means the broker/supplier has been silent past the watchdog. " +
-      "Document checkboxes save inline; stages advance one step at a time. Receiving mints a " +
-      "lot and requires the vendor lot number, expiry, cold-chain status and storage location."),
-    host,
-  );
+  root.append(host);
 
   async function load() {
     const orders = await ctx.api.get("/api/purchase-orders");
@@ -185,7 +179,7 @@ export async function render(root, ctx, params = {}) {
         fields: [
           { name: "lot_number", label: "Vendor lot number" },
           { name: "expiry_date", label: "Expiry date", type: "date" },
-          { name: "location", label: "BGC storage location", value: "BGC -20C Freezer F1 / Box 1", wide: true },
+          { name: "location", label: "Storage location", value: "Lab -20C Freezer F1 / Box 1", wide: true },
           { name: "cold_chain_ok", label: "Cold chain intact on arrival", type: "checkbox", value: true },
           { name: "discrepancy", label: "Or open a discrepancy hold", type: "select",
             value: "NONE", options: DISCREPANCIES.map(([value, label]) => ({ value, label })), wide: true },

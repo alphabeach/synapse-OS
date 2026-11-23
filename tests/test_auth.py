@@ -1,7 +1,7 @@
 """Auth, role gates, CSRF, session invalidation, and the demo login path."""
 from fastapi.testclient import TestClient
 
-from tests.conftest import PASSWORDS, login
+from tests.conftest import PASSWORDS, USERNAMES, login
 
 
 def test_unauthenticated_request_is_401(client):
@@ -44,7 +44,7 @@ def test_password_change_invalidates_other_sessions(client):
     from app.server import app
     other = TestClient(app)
     assert other.post("/api/login", json={
-        "username": "admin", "password": PASSWORDS["admin"],
+        "username": USERNAMES["admin"], "password": PASSWORDS["admin"],
     }).status_code == 200
     assert other.get("/api/me").status_code == 200
 
@@ -64,7 +64,7 @@ def test_demo_login_goes_through_real_auth(client):
     assert response.status_code == 200, response.text
     assert response.json()["role"] == "admin"
     assert client.get("/api/me").status_code == 200
-    assert client.cookies["exin_session"]
+    assert client.cookies["synapse_session"]
 
 
 def test_login_throttling_returns_429(client):
@@ -97,7 +97,7 @@ def test_seed_with_demo_login_off_uses_admin_password(tmp_path, monkeypatch):
         ).fetchall()
     finally:
         conn.close()
-    assert [u["username"] for u in users] == ["admin"]
+    assert [u["username"] for u in users] == ["admin@lab.local"]
     assert appauth.verify_password(
         "a-real-admin-password",
         users[0]["password_salt"], users[0]["password_hash"], users[0]["iterations"],
@@ -117,6 +117,6 @@ def test_db_path_honours_env(tmp_path, monkeypatch):
 
 
 def test_logout_ends_the_session(admin):
-    admin.headers["X-CSRF-Token"] = admin.cookies["exin_csrf"]
+    admin.headers["X-CSRF-Token"] = admin.cookies["synapse_csrf"]
     assert admin.post("/api/logout").status_code == 200
     assert admin.get("/api/me").status_code == 401

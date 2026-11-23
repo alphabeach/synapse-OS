@@ -48,7 +48,7 @@ def test_receive_mints_lot_and_increments_stock(member, db):
     response = member.post(f"/api/purchase-orders/{po['id']}/receive", json={
         "lot_number": "PT396-2502",
         "expiry_date": "2027-06-30",
-        "location": "BGC -80C Freezer F2 / Box 4",
+        "location": "Lab -80C Freezer F2 / Box 4",
         "cold_chain_ok": True,
     })
     assert response.status_code == 200, response.text
@@ -68,7 +68,7 @@ def test_receive_mints_lot_and_increments_stock(member, db):
     # A second receipt must not mint a duplicate lot.
     again = member.post(f"/api/purchase-orders/{po['id']}/receive", json={
         "lot_number": "PT396-2502", "expiry_date": "2027-06-30",
-        "location": "BGC -80C Freezer F2 / Box 4", "cold_chain_ok": True,
+        "location": "Lab -80C Freezer F2 / Box 4", "cold_chain_ok": True,
     })
     assert again.status_code == 400
     assert db.execute(

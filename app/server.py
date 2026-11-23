@@ -22,7 +22,7 @@ CSP = (
     "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 )
 
-app = FastAPI(title="Exin Lab Ops", version="0.1.0")
+app = FastAPI(title="Synapse Lab Ops", version="0.1.0")
 
 app.include_router(auth_routes.router, prefix="/api")
 app.include_router(inventory.router, prefix="/api")

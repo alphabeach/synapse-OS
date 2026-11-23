@@ -24,13 +24,7 @@ export async function render(root, ctx, params = {}) {
   }
 
   const host = el("div");
-  root.append(
-    toolbar,
-    el("p", { class: "muted sm" },
-      "Quantities are authoritative. Click a row for the lot inspector, expiry countdown " +
-      "and freezer location. Consumption is atomic and drains lots earliest-expiry-first."),
-    host,
-  );
+  root.append(toolbar, host);
 
   let query = "";
   let timer = null;
@@ -93,7 +87,7 @@ export async function render(root, ctx, params = {}) {
           onclick: () => consumeDialog(item, ctx, load) }, "Consume"),
         el("button", { class: "btn sm", type: "button",
           onclick: () => restockDialog(item, ctx, load) }, "Restock"),
-        el("button", { class: "btn sm", type: "button",
+        el("button", { class: "btn sm ghost", type: "button",
           onclick: () => recountDialog(item, ctx, load) }, "Recount"),
       );
     }
@@ -121,7 +115,7 @@ export async function render(root, ctx, params = {}) {
 
 function sku(item) {
   const cat = String(item.category || "oth").slice(0, 3).toUpperCase();
-  return `EXN-${cat}-${String(item.id).padStart(4, "0")}`;
+  return `LAB-${cat}-${String(item.id).padStart(4, "0")}`;
 }
 
 // Days until the reorder point at the current burn; red when it lands inside
@@ -168,7 +162,7 @@ function restockDialog(item, ctx, reload) {
       { name: "quantity", label: "Quantity", type: "number", min: 1, value: 1, required: true },
       { name: "lot_number", label: "Vendor lot number", required: true },
       { name: "expiry_date", label: "Expiry date", type: "date", required: true },
-      { name: "location", label: "BGC storage location", value: "BGC -20C Freezer F1 / Box 1", required: true, wide: true },
+      { name: "location", label: "Storage location", value: "Lab -20C Freezer F1 / Box 1", required: true, wide: true },
       { name: "cold_chain_ok", label: "Cold chain intact", type: "checkbox", value: true },
     ],
     submitLabel: "Restock",

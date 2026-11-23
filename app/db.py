@@ -4,7 +4,7 @@ import pathlib
 import sqlite3
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
-DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "bgc_lab.db"))
+DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "synapse_lab.db"))
 SCHEMA_PATH = BASE_DIR / "schema.sql"
 
 # schema.sql builds a fresh database complete, so a new file is stamped at this

@@ -1,8 +1,8 @@
-# Synapse OS
+# Synapse Lab Ops
 
-Procurement, customs clearance, and inventory for a research lab.
-FastAPI + SQLite + a buildless vanilla ES-module SPA. No npm, no bundler,
-no CDN.
+A general-purpose R&D lab operations console: wet-lab inventory, supplier quote
+comparison, and import customs tracking. FastAPI + SQLite + a buildless vanilla
+ES-module SPA. No npm, no bundler, no CDN.
 
 ## Run
 
@@ -11,39 +11,75 @@ pip install -r requirements.txt
 python run.py
 ```
 
-Open http://localhost:8770 and press **1-click demo login** (admin), or sign in as
-`member` / `viewer` with the passwords shown on the login card.
+Open http://localhost:8770 and press **1-click demo login** (admin), or sign in
+with the demo accounts shown on the login card:
+
+| Role | Username | Password |
+| --- | --- | --- |
+| Admin | `admin@lab.local` | `lab-demo-2026` |
+| Scientist | `member` | `lab-member-2026` |
+| Viewer | `viewer` | `lab-viewer-2026` |
 
 `HOST` (default `0.0.0.0`) and `PORT` (default `8770`) come from the environment,
 so the same command works locally and on Render / Railway / Fly. Set
 `COOKIE_SECURE=1` on any HTTPS deployment.
 
-The first boot creates `bgc_lab.db`, applies the schema, seeds the demo lab, and
-starts one Uvicorn worker. Delete the file to start over.
+The first boot creates `synapse_lab.db`, applies the schema, seeds the demo lab,
+and starts one Uvicorn worker. Delete the file to start over.
 
-## What is in the demo
+## What the demo contains
 
-- 6 common molecular-biology reagents with burn rates, safety stock and lead
-  times (4 already low).
-- Competing quotes for the phospho-tau antibody: local PH distributor, US direct,
-  and Alibaba — each priced to a PHP landed cost including freight, dry ice, BOC
-  duty and 12% VAT.
+- Six common molecular-biology reagents with burn rates, safety stock, lead
+  times, and lot-level storage locations (`-80°C`, `-20°C`, `4°C`, `RT`).
+- Competing quotes for a phospho-tau antibody: local PH distributor, US direct,
+  and Alibaba — each priced to a PHP landed cost including freight, dry ice,
+  Bureau of Customs duty, and 12% VAT.
 - One lot 18 days from expiry (B-27 supplement).
-- One import PO sitting in `at_boc_filing`, last followed up 3 days ago, so the
-  48-hour watchdog is red on first boot.
+- One import PO sitting in `at_boc_filing`, last followed up three days ago, so
+  the 48-hour watchdog is red on first boot.
 
 ## The three workflows
 
-1. **Quotes** — pick an item, compare landed cost and bench lead time, then
-   *Award → PO*. The award runs in one transaction: chosen quote becomes
-   `primary`, the cheapest rival becomes `backup`, and the PO is created.
-2. **Customs** — move an order through the PH clearance stages, tick the four
+1. **Inventory** — search the item register, consume stock atomically, restock
+   with a vendor lot, recount against the live quantity, or deprecate an item.
+   Clicking a row opens the lot inspector with expiry countdowns and freezer
+   locations.
+2. **Quotes** — pick an item, compare PHP unit price, landed cost, and effective
+   lead time, then *Award → PO*. The award runs in one transaction: the chosen
+   quote becomes `primary`, the cheapest rival becomes `backup`, and the PO is
+   created. The Alibaba panel lists three fresh import deals and marks any deal
+   already in the quote table as **Imported**.
+3. **Customs** — move an order through the clearance stages, tick the four
    import documents, set the permit (NONE/FDA/PDEA/DENR), and chase anything the
    broker has gone quiet on. *Log follow-up* clears the badge.
-3. **Receiving** — receiving requires the vendor lot number, expiry, cold-chain
-   status and storage location before a lot is minted and stock increments.
-   Short shipment, broken cold chain or wrong spec open a discrepancy hold
-   instead.
+
+Receiving requires the vendor lot number, expiry, cold-chain status, and storage
+location before a lot is minted and stock increments. Short shipment, broken
+cold chain, or wrong spec opens a discrepancy hold instead.
+
+## Philippine import compliance
+
+The landed-cost engine in `app/landed.py` is the single source of truth used by
+both the API and the UI:
+
+```
+goods   = unit_price × fx_rate × quantity      (fx = 1 for PHP quotes)
+freight = shipping_php + cold_chain_php
+duties  = (goods + freight) × duty_rate        (BOC tariff)
+VAT     = (goods + freight + duties) × 12%
+landed  = goods + freight + duties + VAT
+```
+
+Lead time is supplier lead time plus a configurable BOC buffer. The customs
+workflow tracks the documents and permits that regional imports commonly need:
+
+- **BOC** — invoice, packing list, AWB, CoA/MSDS, duty assessment.
+- **FDA** — for regulated reagents and diagnostic inputs.
+- **PDEA** — for controlled substances.
+- **DENR** — for hazardous or environmental-regulated materials.
+
+These are operational checklists, not legal advice; confirm requirements with the
+relevant agency for each shipment.
 
 ## Layout
 
@@ -57,7 +93,7 @@ app/landed.py         the single PHP landed-cost calculation
 app/alerts.py         the single source of counters + Attention Needed
 app/routes/{auth,inventory,quotes,customs}.py
 web/js/{app,ui,dashboard,inventory,quotes,customs}.js
-tests/                36 tests
+tests/                API, concurrency, migration, and landed-cost tests
 ```
 
 Views import only `web/js/ui.js`. `app.js` imports the views, so a view can be
@@ -86,8 +122,9 @@ python -m pytest -q
 
 Covers role enforcement, CSRF rejection, session invalidation on password change,
 20-way concurrent consumption (never negative), FEFO, optimistic recount 409,
-quote→PO conversion with primary/backup, lot-captured receiving, discrepancy
-holds, the watchdog, LIKE escaping, migrations and the landed-cost math.
+quote→PO conversion with primary/backup, Alibaba deal discovery, lot-captured
+receiving, discrepancy holds, the watchdog, LIKE escaping, migrations, and the
+landed-cost math.
 
 ## Deliberate limits
 
@@ -97,3 +134,4 @@ holds, the watchdog, LIKE escaping, migrations and the landed-cost math.
 - `POST /receive` receives the full PO quantity; partial receipt is the next step.
 - The request-body cap reads `Content-Length`; a chunked body without that header
   is not measured.
+- Alibaba deals are a deterministic local catalog, not a live marketplace API.

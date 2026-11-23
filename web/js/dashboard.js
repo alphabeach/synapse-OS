@@ -19,7 +19,7 @@ export async function render(root, ctx) {
       metric("Chase > 48h", c.chase, "customs", "ship",
         () => ctx.navigate("customs"), c.chase > 0)),
     el("p", { class: "telemetry-meta mono" },
-      `${c.open_pos} open POs · ${php(c.spend_php)} received spend · BGC Manila`),
+      `${c.open_pos} open POs · ${php(c.spend_php)} received spend · Manila, PH`),
     el("div", { class: `banner ${total ? "warn" : "ok"}`, role: "status" },
       icon(total ? "alert-triangle" : "check-circle"),
       el("span", {}, total

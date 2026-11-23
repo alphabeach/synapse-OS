@@ -1,7 +1,7 @@
 """Append-only audit trail. Failure is logged loudly, never swallowed."""
 import logging
 
-log = logging.getLogger("exin.audit")
+log = logging.getLogger("synapse.audit")
 
 
 def record(conn, user, action, entity_type=None, entity_id=None, detail=None):

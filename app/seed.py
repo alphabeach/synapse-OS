@@ -1,4 +1,4 @@
-"""Realistic BGC neuro-lab demo data, seeded once when the database is empty.
+"""Realistic R&D wet-lab demo data, seeded once when the database is empty.
 
 Dates are relative (date('now', ...)) so the demo never looks stale: one lot is
 always 18 days from expiry and one BOC shipment is always 3 days past its
@@ -10,11 +10,16 @@ from app import audit, auth, db, landed
 
 # The one place the demo credentials live: seeding and POST /api/demo-login both
 # read these, so they cannot drift apart.
-DEMO_ACCOUNT = {"username": "admin", "password": "exin-demo-2026"}
+DEMO_ACCOUNT = {"username": "admin@lab.local", "password": "lab-demo-2026"}
+DEMO_USERNAMES = {
+    "admin": "admin@lab.local",
+    "member": "member",
+    "viewer": "viewer",
+}
 DEMO_PASSWORDS = {
     "admin": DEMO_ACCOUNT["password"],
-    "member": "exin-member-2026",
-    "viewer": "exin-viewer-2026",
+    "member": "lab-member-2026",
+    "viewer": "lab-viewer-2026",
 }
 
 
@@ -23,8 +28,8 @@ def demo_login_enabled() -> bool:
     return os.environ.get("DEMO_LOGIN", "1") == "1"
 
 _USERS = [
-    ("admin", "Exin Admin", "admin"),
-    ("member", "Procurement Officer", "member"),
+    ("admin@lab.local", "Lab Admin", "admin"),
+    ("member", "Lab Scientist", "member"),
     ("viewer", "Lab Viewer", "viewer"),
 ]
 
@@ -48,13 +53,13 @@ _QUOTES = [
     (1, "Alibaba - BioReagents CN", "alibaba", 42, "USD", 58.5, 6, 1800, 2600, 0.05, 18, 7, "draft"),
 ]
 
-# item index, lot number, expiry offset, qty, BGC location, cold chain intact
+# item index, lot number, expiry offset, qty, storage location, cold chain intact
 _LOTS = [
-    (0, "PT396-2411", "+120 day", 2, "BGC -80C Freezer F2 / Rack A / Box 3", 1),
-    (1, "DMF12-8842", "+60 day", 6, "BGC 4C Fridge / Shelf 2", 1),
-    (2, "B27-5521", "+18 day", 3, "BGC -20C Freezer F1 / Box 7", 1),
-    (3, "L3000-7731", "+200 day", 1, "BGC -20C Freezer F1 / Box 1", 1),
-    (4, "TIP200-3390", "+365 day", 40, "BGC Bench 2 / Cabinet C", 0),
+    (0, "PT396-2411", "+120 day", 2, "Lab -80C Freezer F2 / Rack A / Box 3", 1),
+    (1, "DMF12-8842", "+60 day", 6, "Lab 4C Fridge / Shelf 2", 1),
+    (2, "B27-5521", "+18 day", 3, "Lab -20C Freezer F1 / Box 7", 1),
+    (3, "L3000-7731", "+200 day", 1, "Lab -20C Freezer F1 / Box 1", 1),
+    (4, "TIP200-3390", "+365 day", 40, "Lab Bench 2 / Cabinet C", 0),
     (5, "ETOH70-1180", "+180 day", 10, "Flammables Cabinet / Shelf 1", 0),
 ]
 
@@ -83,7 +88,7 @@ def seed():
             password = os.environ.get("ADMIN_PASSWORD")
             if not password:
                 raise RuntimeError("ADMIN_PASSWORD must be set when DEMO_LOGIN=0")
-            admin_id = _add_user(conn, "admin", "Administrator", "admin", password)
+            admin_id = _add_user(conn, "admin@lab.local", "Lab Admin", "admin", password)
 
         conn.executemany(
             "INSERT INTO app_setting (key, value) VALUES (?, ?)",
@@ -137,8 +142,8 @@ def seed():
             (quote_ids[2], item_ids[idx], supplier, moq, cost, admin_id),
         )
 
-        audit.record(conn, {"id": admin_id, "username": "admin"},
-                     "seed.demo", "app", None, "BGC neuro-lab demo data")
+        audit.record(conn, {"id": admin_id, "username": "admin@lab.local"},
+                     "seed.demo", "app", None, "R&D wet-lab demo data")
         conn.commit()
     finally:
         conn.close()

@@ -126,7 +126,7 @@ def test_restock_requires_lot_and_expiry(member):
     item = item_named(member, "DMEM/F12 Medium (500 mL)")
     response = member.post(f"/api/items/{item['id']}/restock", json={
         "quantity": 2, "lot_number": "X", "expiry_date": "not-a-date",
-        "location": "BGC 4C Fridge",
+        "location": "Lab 4C Fridge",
     })
     assert response.status_code == 400
 
