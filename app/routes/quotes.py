@@ -13,6 +13,16 @@ MAX_DAYS = 3_650
 MAX_MONEY = 10_000_000
 MAX_FX = 1_000
 
+# Static Alibaba offers used by the deal finder. Prices scale with the item's
+# local unit cost so the demo stays plausible for any item. The supplier names
+# are stable keys: a quote already carrying the name is marked imported.
+ALIBABA_DEALS = [
+    ("Alibaba - SinoBio Reagents", 0.25, 2, 1800, 2600, 0.05, 18, 7),
+    ("Alibaba - Hangzhou BioSupply", 0.31, 5, 1500, 2400, 0.05, 21, 7),
+    ("Alibaba - Shanghai LabTech", 0.38, 1, 2100, 2800, 0.03, 14, 5),
+]
+DISCOVER_FX = 58.5
+
 
 class QuoteBody(BaseModel):
     item_id: int
@@ -69,6 +79,48 @@ def list_quotes(item_id: int | None = None,
         out = [decorate(r) for r in conn.execute(sql, params)]
         out.sort(key=lambda q: (q["item_id"], q["landed_cost_php"]))
         return out
+    finally:
+        conn.close()
+
+
+@router.get("/quotes/discover")
+def discover_quotes(item_id: int | None = None,
+                    user: dict = Depends(auth.require_role("viewer"))):
+    """Three distinct Alibaba offers for an item, priced in PHP landed cost."""
+    conn = db.get_conn()
+    try:
+        sql = "SELECT id, name, unit_cost_php FROM item"
+        params = []
+        if item_id is not None:
+            sql += " WHERE id = ?"
+            params.append(item_id)
+        sql += " ORDER BY id LIMIT 1"
+        item = conn.execute(sql, params).fetchone()
+        if item is None:
+            raise HTTPException(status_code=404, detail="item not found")
+
+        existing = {
+            row["supplier_name"] for row in conn.execute(
+                """SELECT supplier_name FROM quote
+                    WHERE item_id = ? AND supplier_type = 'alibaba'""",
+                (item["id"],),
+            )
+        }
+        deals = []
+        for name, factor, moq, ship, cold, duty, lead, buffer in ALIBABA_DEALS:
+            price = round(max(item["unit_cost_php"], 1) * factor / DISCOVER_FX, 2)
+            deal = decorate({
+                "item_id": item["id"], "supplier_name": name,
+                "supplier_type": "alibaba", "unit_price": price,
+                "currency": "USD", "fx_rate": DISCOVER_FX, "moq": moq,
+                "shipping_php": ship, "cold_chain_php": cold,
+                "duty_rate": duty, "lead_time_days": lead,
+                "boc_buffer_days": buffer,
+            })
+            deal["item"] = item["name"]
+            deal["imported"] = name in existing
+            deals.append(deal)
+        return deals
     finally:
         conn.close()
 

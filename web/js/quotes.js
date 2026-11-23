@@ -40,9 +40,6 @@ export async function render(root, ctx) {
 
   root.append(
     toolbar,
-    el("p", { class: "muted sm" },
-      "Landed cost = goods + freight + cold chain + BOC duties + 12% VAT, in PHP. " +
-      "Lead time includes the BOC buffer. Green marks the cheapest landed unit."),
     decision,
     alibaba,
     host,
@@ -52,10 +49,14 @@ export async function render(root, ctx) {
 
   async function load() {
     const mine = ++seq;
-    host.replaceChildren(el("p", { class: "muted" }, "Loading quotes…"));
+    host.replaceChildren();
     let quotes;
+    let deals;
     try {
-      quotes = await ctx.api.get(`/api/quotes?item_id=${select.value}`);
+      [quotes, deals] = await Promise.all([
+        ctx.api.get(`/api/quotes?item_id=${select.value}`),
+        ctx.api.get(`/api/quotes/discover?item_id=${select.value}`),
+      ]);
     } catch (err) {
       if (mine === seq) {
         host.replaceChildren(el("p", { class: "error" }, err.message));
@@ -65,9 +66,9 @@ export async function render(root, ctx) {
     }
     if (mine !== seq) return;
 
+    fillAlibaba(deals);
     if (!quotes.length) {
       decision.replaceChildren(el("p", { class: "panel-empty" }, "No quotes to compare."));
-      fillAlibaba([]);
       host.replaceChildren(el("p", { class: "muted" }, "No quotes for this item yet."));
       return;
     }
@@ -76,33 +77,27 @@ export async function render(root, ctx) {
     const live = quotes.filter((q) => q.status !== "rejected");
     const pool = live.length ? live : quotes;
     fillDecision(pool);
-    fillAlibaba(quotes);
     host.replaceChildren(renderTable(quotes, pool));
   }
 
   function renderTable(quotes, pool) {
     const cheapest = Math.min(...pool.map(unitLanded));
-    const cheapestTotal = Math.min(...pool.map((q) => q.landed_cost_php));
-    const fastest = Math.min(...pool.map((q) => q.effective_lead_days));
     return table(
       ["Supplier", "Source", "MOQ", "Unit PHP", "UNIT LANDED", "LANDED PHP", "Lead", "Status", ""],
       quotes.map((q) => [
         el("strong", {}, q.supplier_name),
         TYPE_LABEL[q.supplier_type] || q.supplier_type,
         num(q.moq),
-        q.currency === "PHP"
-          ? el("span", { class: "mono" }, php(q.unit_price, 2))
-          : el("span", { class: "mono" }, `$${num(q.unit_price, 2)}`),
+        el("div", {},
+          el("span", { class: "mono" }, php(q.unit_price_php, 2)),
+          q.currency === "USD"
+            ? el("span", { class: "cell-sub" }, `$${num(q.unit_price, 2)}`)
+            : null),
         el("span", {
           class: `mono${q.status !== "rejected" && unitLanded(q) === cheapest ? " best" : ""}`,
         }, php(unitLanded(q), 2)),
-        el("span", {
-          class: q.status !== "rejected" && q.landed_cost_php === cheapestTotal
-            ? "mono best" : "mono",
-        }, php(q.landed_cost_php, 2)),
-        el("span", {
-          class: q.status !== "rejected" && q.effective_lead_days === fastest ? "mono best" : "mono",
-        }, `${q.effective_lead_days}d`),
+        el("span", { class: "mono" }, php(q.landed_cost_php, 2)),
+        el("span", { class: "mono" }, `${q.effective_lead_days}d`),
         statusBadge(q.status),
         awardCell(q),
       ]),
@@ -129,44 +124,54 @@ export async function render(root, ctx) {
     );
   }
 
-  function fillAlibaba(quotes) {
-    const deals = quotes.filter((q) => q.supplier_type === "alibaba");
+  function fillAlibaba(deals) {
+    const fresh = deals.filter((d) => !d.imported);
     alibaba.replaceChildren(
       el("div", { class: "panel-head" },
         icon("search"),
-        el("h2", {}, "Find Alibaba Deals"),
-        badge(`${deals.length} deal${deals.length === 1 ? "" : "s"}`,
-          deals.length ? "stage" : "muted")),
+        el("h2", {}, "Alibaba Deals"),
+        badge(`${fresh.length} new`,
+          fresh.length ? "stage" : "muted")),
       deals.length
         ? el("div", { class: "deal-list" }, ...deals.map(dealRow))
-        : el("p", { class: "panel-empty" }, "No Alibaba quote for this item yet."),
+        : el("p", { class: "panel-empty" }, "No Alibaba deals for this item."),
     );
   }
 
-  function dealRow(q) {
-    const imported = q.status === "primary";
-    const blocked = imported || q.status === "rejected";
+  function dealRow(deal) {
     const btn = el("button", {
-      class: `btn sm${imported ? "" : " primary"}`, type: "button",
-      disabled: blocked ? "" : null,
-      title: imported ? "Already imported as the primary PO" : "Award this deal and create the PO",
-    }, imported ? "Imported" : q.status === "rejected" ? "Rejected" : "1-click import");
-    if (!blocked) {
+      class: `btn sm${deal.imported ? "" : " primary"}`, type: "button",
+      disabled: deal.imported ? "" : null,
+      title: deal.imported ? "Already in the quote table" : "Add this deal to the quote table",
+    }, deal.imported ? "Imported" : "Import");
+    if (!deal.imported) {
       btn.addEventListener("click", () => runAction(btn, ctx, async () => {
-        const res = await ctx.api.post(`/api/quotes/${q.id}/award`, { quantity: q.moq });
-        ctx.toast(`Imported ${q.supplier_name} → PO #${res.po_id}`);
+        await ctx.api.post("/api/quotes", {
+          item_id: Number(select.value),
+          supplier_name: deal.supplier_name,
+          supplier_type: "alibaba",
+          unit_price: deal.unit_price,
+          currency: deal.currency,
+          fx_rate: deal.fx_rate,
+          moq: deal.moq,
+          shipping_php: deal.shipping_php,
+          cold_chain_php: deal.cold_chain_php,
+          duty_rate: deal.duty_rate,
+          lead_time_days: deal.lead_time_days,
+          boc_buffer_days: deal.boc_buffer_days,
+        });
+        ctx.toast(`Imported ${deal.supplier_name}`);
         await load();
       }));
     }
     return el("div", { class: "deal" },
       el("div", { class: "deal-main" },
-        el("strong", {}, q.supplier_name),
+        el("strong", {}, deal.supplier_name),
         el("span", { class: "muted sm" },
-          `${q.currency === "PHP" ? php(q.unit_price, 2) : `$${num(q.unit_price, 2)}`} / unit · MOQ ${num(q.moq)}`)),
+          `$${num(deal.unit_price, 2)} / unit · MOQ ${num(deal.moq)}`)),
       el("div", { class: "deal-meta" },
-        el("span", { class: "mono" }, `${php(unitLanded(q), 2)} landed/unit`),
-        el("span", { class: "mono muted" }, `${q.effective_lead_days}d`),
-        statusBadge(q.status)),
+        el("span", { class: "mono" }, `${php(unitLanded(deal), 2)} landed/unit`),
+        el("span", { class: "mono muted" }, `${deal.effective_lead_days}d`)),
       btn);
   }
 

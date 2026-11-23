@@ -137,3 +137,37 @@ def test_landed_cost_ignores_client_supplied_totals(member):
     assert response.status_code == 200, response.text
     # 1000 goods + 200 freight + 60 duty + 151.20 VAT, not the supplied 1.
     assert response.json()["landed_cost_php"] == 1411.2
+
+
+def test_discover_returns_three_distinct_alibaba_deals_and_marks_imports(member):
+    item = item_named(member, "Ethanol 70%")
+    deals = member.get(
+        "/api/quotes/discover", params={"item_id": item["id"]}
+    ).json()
+    assert len(deals) == 3
+    assert len({d["supplier_name"] for d in deals}) == 3
+    assert all(d["supplier_type"] == "alibaba" and d["unit_price_php"] > 0 for d in deals)
+    assert not any(d["imported"] for d in deals)
+
+    first = deals[0]
+    response = member.post("/api/quotes", json={
+        "item_id": item["id"],
+        "supplier_name": first["supplier_name"],
+        "supplier_type": "alibaba",
+        "unit_price": first["unit_price"],
+        "currency": "USD",
+        "fx_rate": first["fx_rate"],
+        "moq": first["moq"],
+        "shipping_php": first["shipping_php"],
+        "cold_chain_php": first["cold_chain_php"],
+        "duty_rate": first["duty_rate"],
+        "lead_time_days": first["lead_time_days"],
+        "boc_buffer_days": first["boc_buffer_days"],
+    })
+    assert response.status_code == 200, response.text
+
+    again = member.get(
+        "/api/quotes/discover", params={"item_id": item["id"]}
+    ).json()
+    imported = next(d for d in again if d["supplier_name"] == first["supplier_name"])
+    assert imported["imported"] is True
